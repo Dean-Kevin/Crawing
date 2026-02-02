@@ -227,8 +227,92 @@ class NetworkDeviceParser {
       return this.parseCiscoIOS(text);
     }
 
+    // Detect Juniper device
+    if (text.match(/Physical interface|Logical interface|Juniper|JUNOS/i)) {
+      return this.parseJuniper(text);
+    }
+
     // Default to generic parser
     return this.parseGeneric(text);
+  }
+
+  /**
+   * Parse Juniper device output
+   */
+  static parseJuniper(text) {
+    const result = {};
+    const interfaces = [];
+
+    // Extract description/hostname
+    const descMatch = text.match(/Description:\s*([^\n]+)/);
+    if (descMatch) {
+      result.description = descMatch[1].trim();
+    }
+
+    // Parse physical interfaces
+    const interfacePattern = /Physical interface:\s*([^\s,]+)/g;
+    let match;
+    while ((match = interfacePattern.exec(text)) !== null) {
+      const ifName = match[1];
+      const ifStart = match.index;
+      
+      // Find next interface or end of text
+      const ifEnd = text.indexOf('Physical interface:', ifStart + 1);
+      const ifText = text.substring(ifStart, ifEnd > -1 ? ifEnd : text.length);
+
+      const iface = { name: ifName };
+
+      // Extract status
+      const statusMatch = ifText.match(/Physical link is\s+(\w+)/);
+      if (statusMatch) {
+        iface.linkStatus = statusMatch[1].toLowerCase();
+      }
+
+      // Extract MTU
+      const mtuMatch = ifText.match(/MTU:\s*(\d+)/);
+      if (mtuMatch) {
+        iface.mtu = parseInt(mtuMatch[1]);
+      }
+
+      // Extract speed
+      const speedMatch = ifText.match(/Speed:\s*([^,\n]+)/);
+      if (speedMatch) {
+        iface.speed = speedMatch[1].trim();
+      }
+
+      // Extract MAC address
+      const macMatch = ifText.match(/(?:Hardware|Current) address:\s*([0-9a-f]{2}(?::[0-9a-f]{2}){5}|[0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4})/i);
+      if (macMatch) {
+        iface.macAddress = macMatch[1];
+      }
+
+      // Extract description
+      const descMatch = ifText.match(/Description:\s*([^\n]+)/);
+      if (descMatch) {
+        iface.description = descMatch[1].trim();
+      }
+
+      // Extract logical interfaces
+      const logicalPattern = /Logical interface\s+([^\s(]+)/g;
+      const logicalInterfaces = [];
+      let logMatch;
+      while ((logMatch = logicalPattern.exec(ifText)) !== null) {
+        logicalInterfaces.push({
+          name: logMatch[1]
+        });
+      }
+      if (logicalInterfaces.length > 0) {
+        iface.logicalInterfaces = logicalInterfaces;
+      }
+
+      interfaces.push(iface);
+    }
+
+    if (interfaces.length > 0) {
+      result.interfaces = interfaces;
+    }
+
+    return result;
   }
 }
 

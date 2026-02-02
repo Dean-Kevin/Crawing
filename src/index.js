@@ -1,5 +1,6 @@
 const { DistributedWebCrawler } = require('./crawler');
 const { NetworkDeviceParser } = require('./parser');
+const fs = require('fs');
 
 /**
  * Main demonstration and testing file for IP Fabric Programming Test
@@ -111,84 +112,33 @@ function demonstrateParser() {
   console.log('='.repeat(60));
   console.log();
 
-  // Example Cisco IOS output
-  const ciscoIOSExample = `
-Cisco IOS Software, Router Software, Version 15.2(4)M1
+  // Read from parsing-test file
+  const parsingTestFile = './parsing-test';
+  let deviceOutput = '';
+  
+  try {
+    const fileContent = fs.readFileSync(parsingTestFile, 'utf8');
+    // Extract text between const text = ` and the closing `
+    const match = fileContent.match(/const text = `([\s\S]*?)`/);
+    if (match && match[1]) {
+      deviceOutput = match[1];
+    } else {
+      deviceOutput = fileContent;
+    }
+  } catch (error) {
+    console.error(`Error reading ${parsingTestFile}:`, error.message);
+    return;
+  }
 
-router#show version
-Cisco IOS Software [Amsterdam], ISR4000 Software, Version 15.2(4)M1
-Technical Support: http://www.cisco.com/techsupport
-Copyright (c) 1986-2014 by Cisco Systems, Inc.
-Compiled Wed 15-Jan-14 11:13 by prod_rel_team
-Model Number                    : ISR4321
-System Serial Number            : FGL234567890
-Configuration register is 0x2102
-
-router#show interfaces
-Ethernet0/0 is up, line protocol is up
-  Hardware is iEthernet, address is aabb.cc00.0010
-  Internet address is 192.168.1.1/24
-  MTU 1500 bytes, BW 1000000 Kbit
-  Encapsulation ARPA, loopback not set
-Ethernet0/1 is down, line protocol is down
-  Hardware is iEthernet, address is aabb.cc00.0011
-  MTU 1500 bytes, BW 1000000 Kbit
-GigabitEthernet0/0/0 is up, line protocol is up
-  Hardware is gigabit ethernet, address is aabb.cc00.0020
-  Internet address is 10.0.0.1/24
-  MTU 1500 bytes, BW 1000000000 Kbit
-Serial0/0/0 is down, line protocol is down
-  Hardware is Serial, address is aabb.cc00.0030
-  MTU 1500 bytes, BW 64000 Kbit
-Loopback0 is up, line protocol is up
-  Hardware is Loopback
-  Internet address is 172.16.0.1/32
-  MTU 65535 bytes, BW 8000000 Kbit
-`;
-
-  console.log('Testing Cisco IOS Parser:');
-  console.log('Input (sample):');
-  console.log(ciscoIOSExample.substring(0, 300) + '...');
+  console.log('Testing Device Parser with parsing-test file (Juniper Device):');
+  console.log('Input (first 500 chars):');
+  console.log(deviceOutput.substring(0, 500) + '...');
   console.log();
 
-  const parsedCisco = NetworkDeviceParser.parse(ciscoIOSExample);
+  const parsed = NetworkDeviceParser.parse(deviceOutput);
 
   console.log('Output (Parsed):');
-  console.log(JSON.stringify(parsedCisco, null, 2));
-
-  // Example generic device output
-  const genericExample = `
-hostname: core-router-01
-device type: FortiGate 3000D
-model: FortiGate3000D
-serial number: FG34D5E16789012
-software version: 6.2.5
-uptime: 245 days, 3 hours, 12 minutes
-
-Interface Configuration:
-eth0 up
-  ip address: 203.0.113.1/24
-  hwaddr: 00:11:22:33:44:55
-eth1 down
-  ip address: 203.0.113.2/24
-  hwaddr: 00:11:22:33:44:56
-eth2 up
-  ip address: 198.51.100.1/24
-  hwaddr: 00:11:22:33:44:57
-eth3 active
-  hwaddr: 00:11:22:33:44:58
-`;
-
-  console.log('\n' + '-'.repeat(60));
-  console.log('Testing Generic Device Parser:');
-  console.log('Input (sample):');
-  console.log(genericExample.substring(0, 300) + '...');
-  console.log();
-
-  const parsedGeneric = NetworkDeviceParser.parse(genericExample);
-
-  console.log('Output (Parsed):');
-  console.log(JSON.stringify(parsedGeneric, null, 2));
+  console.log(JSON.stringify(parsed, null, 2));
 
   console.log('\n' + '='.repeat(60));
   console.log('PARSER DESIGN NOTES:');
