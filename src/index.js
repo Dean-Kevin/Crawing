@@ -12,7 +12,7 @@ async function demonstrateCrawler() {
   console.log();
 
   const crawler = new DistributedWebCrawler({
-    maxDepth: 2,
+    maxDepth: 1,
     maxConcurrency: 3,
     timeout: 30000, // Increased timeout for slow servers
     delayBetweenRequests: 500,
@@ -26,11 +26,11 @@ async function demonstrateCrawler() {
   });
 
   try {
-    console.log('Starting crawl of https://ipfabric.io/');
-    console.log('Configuration: maxDepth=2, maxConcurrency=3');
+    console.log('Starting crawl of https://example.com/');
+    console.log('Configuration: maxDepth=1, maxConcurrency=3');
     console.log();
 
-    const results = await crawler.crawl('https://ipfabric.io/');
+    const results = await crawler.crawl('https://example.com/');
 
     // Display sample results
     console.log('Sample results (first 3 pages):');
