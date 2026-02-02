@@ -44,10 +44,14 @@ class DistributedWebCrawler extends EventEmitter {
     this.config = {
       maxDepth: config.maxDepth ?? 3,
       maxConcurrency: config.maxConcurrency ?? 5,
-      timeout: config.timeout ?? 10000,
+      timeout: config.timeout ?? 30000, // Increased from 10000ms to 30000ms
       delayBetweenRequests: config.delayBetweenRequests ?? 100,
       userAgent: config.userAgent ?? 'Mozilla/5.0 (IPFabric-Crawler/1.0)',
       storageDir: config.storageDir ?? './crawl-storage',
+      maxRetries: config.maxRetries ?? 3, // Retry failed requests
+      retryDelay: config.retryDelay ?? 1000, // Base retry delay (ms)
+      connectTimeout: config.connectTimeout ?? 5000, // Connection timeout
+      slowHostThreshold: config.slowHostThreshold ?? 15000, // Mark host as slow if response > 15s
     };
     this.results = [];
     this.isRunning = false;
@@ -60,6 +64,8 @@ class DistributedWebCrawler extends EventEmitter {
       currentSize: 0,
     };
     this.domainsCrawled = new Set();
+    this.slowHosts = new Set(); // Track slow hosts for adaptive delays
+    this.hostDelays = new Map(); // Per-host delay tracking
   }
 
   /**
@@ -139,76 +145,131 @@ class DistributedWebCrawler extends EventEmitter {
         // Respect crawl delay
         await this.sleep(this.config.delayBetweenRequests);
       } catch (error) {
-        this.emit('error', { url, error });
+        // Log error but continue crawling
+        const errorMsg = error.code === 'ECONNABORTED' 
+          ? `timeout of ${this.config.timeout}ms exceeded`
+          : error.message;
+        
+        console.log(`[ERROR] Failed to crawl ${url}: ${errorMsg}`);
+        this.emit('error', { url, error, message: errorMsg });
+        
+        // Still respect delay before continuing to next URL
+        await this.sleep(this.config.delayBetweenRequests);
       }
     }
   }
 
   /**
-   * Fetch URL content and extract links
+   * Fetch URL content and extract links with retry logic
    */
   async fetchAndParse(url, depth) {
-    const response = await axios.get(url, {
-      timeout: this.config.timeout,
-      headers: { 'User-Agent': this.config.userAgent },
-      validateStatus: () => true, // Accept all status codes
-    });
-
-    const contentType = response.headers['content-type'] || '';
-    const foundUrls = [];
-    let title = null;
-
-    // Only parse HTML content
-    if (contentType.includes('text/html')) {
-      const $ = cheerio.load(response.data);
-
-      // Extract page title
-      title = $('title').text() || null;
-
-      // Extract links from various sources
-      $('a[href]').each((_, el) => {
-        const href = $(el).attr('href');
-        if (href) {
-          try {
-            const absoluteUrl = new URL(href, url).href;
-            // Filter out fragments and non-http protocols
-            if (absoluteUrl.startsWith('http')) {
-              foundUrls.push(absoluteUrl);
-              this.discoveredUrls.add(absoluteUrl);
-            }
-          } catch {
-            // Skip invalid URLs
-          }
+    let lastError = null;
+    const retries = this.config.maxRetries;
+    const domain = new URL(url).hostname;
+    
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        // Apply adaptive delay for slow hosts
+        if (this.slowHosts.has(domain)) {
+          const delay = this.hostDelays.get(domain) || this.config.slowHostThreshold;
+          console.log(`[SLOW HOST] ${domain} - waiting ${delay}ms before request`);
+          await this.sleep(delay);
         }
-      });
 
-      // Also check other link sources
-      $('link[href]').each((_, el) => {
-        const href = $(el).attr('href');
-        if (href) {
-          try {
-            const absoluteUrl = new URL(href, url).href;
-            if (absoluteUrl.startsWith('http')) {
-              foundUrls.push(absoluteUrl);
-              this.discoveredUrls.add(absoluteUrl);
-            }
-          } catch {
-            // Skip invalid URLs
-          }
+        const startTime = Date.now();
+        
+        const response = await axios.get(url, {
+          timeout: this.config.timeout,
+          headers: { 
+            'User-Agent': this.config.userAgent,
+            'Accept-Encoding': 'gzip, deflate', // Enable compression
+            'Connection': 'keep-alive', // Connection pooling
+          },
+          validateStatus: () => true, // Accept all status codes
+          maxRedirects: 5, // Follow redirects
+        });
+
+        const responseTime = Date.now() - startTime;
+
+        // Mark as slow host if response time exceeds threshold
+        if (responseTime > this.config.slowHostThreshold) {
+          this.slowHosts.add(domain);
+          this.hostDelays.set(domain, Math.min(responseTime, 10000)); // Cap at 10s
+          console.log(`[MARKED SLOW] ${domain} (${responseTime}ms)`);
         }
-      });
+
+        const contentType = response.headers['content-type'] || '';
+        const foundUrls = [];
+        let title = null;
+
+        // Only parse HTML content
+        if (contentType.includes('text/html')) {
+          const $ = cheerio.load(response.data);
+
+          // Extract page title
+          title = $('title').text() || null;
+
+          // Extract links from various sources
+          $('a[href]').each((_, el) => {
+            const href = $(el).attr('href');
+            if (href) {
+              try {
+                const absoluteUrl = new URL(href, url).href;
+                // Filter out fragments and non-http protocols
+                if (absoluteUrl.startsWith('http')) {
+                  foundUrls.push(absoluteUrl);
+                  this.discoveredUrls.add(absoluteUrl);
+                }
+              } catch {
+                // Skip invalid URLs
+              }
+            }
+          });
+
+          // Also check other link sources
+          $('link[href]').each((_, el) => {
+            const href = $(el).attr('href');
+            if (href) {
+              try {
+                const absoluteUrl = new URL(href, url).href;
+                if (absoluteUrl.startsWith('http')) {
+                  foundUrls.push(absoluteUrl);
+                  this.discoveredUrls.add(absoluteUrl);
+                }
+              } catch {
+                // Skip invalid URLs
+              }
+            }
+          });
+        }
+
+        return {
+          url,
+          depth,
+          title,
+          status: response.status,
+          contentType,
+          linksFound: foundUrls.length,
+          timestamp: new Date().toISOString(),
+          responseTime,
+          foundUrls, // Added for internal tracking
+        };
+      } catch (error) {
+        lastError = error;
+        
+        if (attempt < retries) {
+          // Calculate exponential backoff: 1s, 2s, 4s, etc.
+          const delayMs = this.config.retryDelay * Math.pow(2, attempt);
+          console.log(`[RETRY ${attempt + 1}/${retries}] ${url} - waiting ${delayMs}ms`);
+          await this.sleep(delayMs);
+        } else {
+          // All retries exhausted, throw error
+          throw error;
+        }
+      }
     }
-
-    return {
-      url,
-      depth,
-      title,
-      status: response.status,
-      contentType,
-      linksFound: foundUrls.length,
-      timestamp: new Date().toISOString(),
-      foundUrls, // Added for internal tracking
-    };
+    
+    throw lastError;
   }
 
   /**

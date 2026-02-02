@@ -14,8 +14,11 @@ async function demonstrateCrawler() {
   const crawler = new DistributedWebCrawler({
     maxDepth: 2,
     maxConcurrency: 3,
-    timeout: 10000,
+    timeout: 30000, // Increased timeout for slow servers
     delayBetweenRequests: 500,
+    maxRetries: 3, // Retry failed requests
+    retryDelay: 1000, // Base retry delay
+    slowHostThreshold: 15000, // Mark host as slow if response > 15s
   });
 
   crawler.on('error', (event) => {
