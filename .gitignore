@@ -1,0 +1,10 @@
+node_modules/
+dist/
+build/
+crawl-storage/
+crawl-results.json
+*.log
+.DS_Store
+.env
+.env.local
+.vscode/settings.json

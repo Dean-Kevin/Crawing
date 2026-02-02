@@ -1,0 +1,17 @@
+{
+  "name": "ipfabric-programming-test",
+  "version": "1.0.0",
+  "description": "IP Fabric Programming Test - Web Crawler and Network Device Parser",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node src/test.js"
+  },
+  "keywords": ["crawler", "parser", "network"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12"
+  }
+}
