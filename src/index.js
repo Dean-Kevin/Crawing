@@ -26,11 +26,11 @@ async function demonstrateCrawler() {
   });
 
   try {
-    console.log('Starting crawl of https://example.com/');
+    console.log('Starting crawl of https://ipfabric.io/');
     console.log('Configuration: maxDepth=1, maxConcurrency=3');
     console.log();
 
-    const results = await crawler.crawl('https://example.com/');
+    const results = await crawler.crawl('https://ipfabric.io/');
 
     // Display sample results
     console.log('Sample results (first 3 pages):');
